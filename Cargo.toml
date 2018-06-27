@@ -1,0 +1,13 @@
+[package]
+name = "MioPractice"
+version = "0.1.0"
+authors = ["KennethZhang <zjhken01@163.com>"]
+
+[dependencies]
+mio = "0.6"
+env_logger = "0.3.1"
+log = "0.3.1"
+slab = "0.4.0"
+
+[profile.release]
+lto = true
