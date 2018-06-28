@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![feature(nll)]
 extern crate mio;
 extern crate slab;
 
@@ -52,33 +53,28 @@ fn main() {
                 .expect("poll register error");
           }
         }else {
-          let mut shouldClose = false;
-          {
-            let ref mut client = tcpStreamMap[usize::from(connectionId)];
-            loop {
-              match client.read(&mut buf) {
-                Ok(n) => {
-                  if n == 0 {
-                    shouldClose = true;
-                    break;
-                  } else {
-                    let mut stdoutHandle = stdout.lock();
-                    stdoutHandle.write(&buf[..n]).expect("write error");
-                    stdoutHandle.flush().expect("flush error");
-                  }
-                }
-                Err(e) => {
-                  if e.kind() != ErrorKind::WouldBlock {
-                    shouldClose = true;
-                  }
+          let ref mut tcpStream = tcpStreamMap[usize::from(connectionId)];
+          loop {
+            match tcpStream.read(&mut buf) { // read into buffer
+              Ok(n) => {
+                if n == 0 {
+                  println!("Closing connection on token={:?}", connectionId);
+                  tcpStreamMap.remove(usize::from(connectionId));
                   break;
+                } else {
+                  let mut stdoutHandle = stdout.lock();
+                  stdoutHandle.write(&buf[..n]).expect("write error"); // write from buffer
+                  stdoutHandle.flush().expect("flush error");
                 }
               }
+              Err(e) => {
+                if e.kind() != ErrorKind::WouldBlock {
+                  println!("Closing connection on token={:?}", connectionId);
+                  tcpStreamMap.remove(usize::from(connectionId));
+                }
+                break;
+              }
             }
-          }
-          if shouldClose {
-            println!("Closing connection on token={:?}", connectionId);
-            tcpStreamMap.remove(usize::from(connectionId));
           }
         }
       }else {
