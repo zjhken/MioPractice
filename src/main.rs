@@ -69,7 +69,7 @@ fn main() {
               }
               Err(e) => {
                 if e.kind() != ErrorKind::WouldBlock {
-                  println!("Closing connection on token={:?}", connectionId);
+                  println!("Closing connection on token={:?}, Error:{:?}", connectionId,e);
                   tcpStreamMap.remove(usize::from(connectionId));
                 }
                 break;
