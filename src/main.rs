@@ -11,8 +11,6 @@ use mio::Token;
 
 use slab::Slab;
 
-//type Slab<T> = slab::Slab<T, Token>;
-
 const THIS_CONN_ID: Token = Token(::std::usize::MAX - 1);
 
 fn main() {
@@ -55,7 +53,8 @@ fn main() {
         }else {
           let ref mut tcpStream = tcpStreamMap[usize::from(connectionId)];
           loop {
-            match tcpStream.read(&mut buf) { // read into buffer
+            // read into buffer
+            match tcpStream.read(&mut buf) {
               Ok(n) => {
                 if n == 0 {
                   println!("Closing connection on token={:?}", connectionId);
@@ -63,7 +62,8 @@ fn main() {
                   break;
                 } else {
                   let mut stdoutHandle = stdout.lock();
-                  stdoutHandle.write(&buf[..n]).expect("write error"); // write from buffer
+                  // write from buffer
+                  stdoutHandle.write(&buf[..n]).expect("write error");
                   stdoutHandle.flush().expect("flush error");
                 }
               }
