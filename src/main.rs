@@ -47,6 +47,7 @@ fn main() {
               Err(_) => break
             };
             let tcpStreamId = tcpStreamMap.insert(tcpStream);
+            // let poll to monitor the tcpStream state
             poll.register(&tcpStreamMap[tcpStreamId], Token::from(tcpStreamId), Ready::readable(), PollOpt::edge())
                 .expect("poll register error");
           }
