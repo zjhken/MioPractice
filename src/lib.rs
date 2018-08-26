@@ -51,7 +51,7 @@ pub fn run() {
 						// let poll to monitor the tcpStream state
 						poll.register(&tcpStreamMap[tcpStreamId],
 									  Token::from(tcpStreamId),
-									  ::readable(),
+									  Ready::readable(),
 									  PollOpt::edge())
 								.expect("poll register error");
 					}
