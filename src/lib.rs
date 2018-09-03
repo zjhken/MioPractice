@@ -38,6 +38,7 @@ pub fn run() {
 	poll.register(&serverTcpListener, SERVER_ID, Ready::readable(), PollOpt::edge())
 			.expect("poll register error");
 
+
 	// the event loop
 	let mut events = Events::with_capacity(1024);
 	let mut tcpStreamSlab = Slab::with_capacity(1024);
