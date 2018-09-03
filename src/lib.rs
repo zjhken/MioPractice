@@ -1,22 +1,30 @@
 #![allow(non_snake_case)]
 #![feature(nll)]
+
 extern crate mio;
 extern crate slab;
+
+#[macro_use]
+extern crate log;
+
+extern crate simple_logger;
 
 use std::net::SocketAddr;
 use std::io::{Read, Write, ErrorKind};
 use mio::*;
-use mio::tcp::TcpListener;
-use mio::Token;
+use mio::tcp::{TcpListener, TcpStream};
 
 use slab::Slab;
 
-const THIS_CONN_ID: Token = Token(::std::usize::MAX - 1);
+const SERVER_ID: Token = Token(0);
 
 pub fn run() {
-	let mut args = ::std::env::args();
-	let cmd = args.next().unwrap();
-	let port = args.next().expect(&format!("Usage: {} [port]", cmd));
+
+	simple_logger::init().unwrap();
+
+//	let port = setupPort();
+
+	let port = "8989";
 
 	let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()
 			.expect("argument format error: port");
@@ -24,71 +32,76 @@ pub fn run() {
 			.expect("socket binding error");
 
 	let poll = Poll::new().expect("poll create error");
-	poll.register(&serverTcpListener, THIS_CONN_ID, Ready::readable(), PollOpt::edge())
+	poll.register(&serverTcpListener, SERVER_ID, Ready::readable(), PollOpt::edge())
 			.expect("poll register error");
 
 	// the event loop
 	let mut events = Events::with_capacity(1024);
-	let mut tcpStreamMap = Slab::with_capacity(1024);
+	let mut tcpStreamSlab = Slab::with_capacity(1024);
 	let mut buf: [u8; 1024] = [0; 1024];
 	let stdout = ::std::io::stdout();
 	loop {
 		poll.poll(&mut events, None).expect("poll error");
 		for event in events.iter() {
-			let (connectionId, readiness) = (event.token(), event.readiness());
-			if readiness.is_readable() {
-				if connectionId == THIS_CONN_ID {
-					loop {
-						// the tcpListener is linked with the connection id
+			let id = event.token();
+			if id == SERVER_ID {
+				if event.readiness().is_readable() {
+					loop{
 						let tcpStream = match serverTcpListener.accept() {
-							Ok((tcpStream, addr)) => {
-								println!("Accepted connection: {}", addr);
+							Ok((tcpStream, addr)) =>{
+								info!("Accepted tcp stream from {:?}", addr);
 								tcpStream
-							}
+							},
 							Err(_) => break
 						};
-						let tcpStreamId = tcpStreamMap.insert(tcpStream);
-						// let poll to monitor the tcpStream state
-						poll.register(&tcpStreamMap[tcpStreamId],
-									  Token::from(tcpStreamId),
+						let streamId = tcpStreamSlab.insert(tcpStream);
+						info!("register this stream ID {}", streamId);
+						poll.register(&tcpStreamSlab[streamId],
+									  Token::from(streamId),
 									  Ready::readable(),
 									  PollOpt::edge())
 								.expect("poll register error");
 					}
-				} else {
-					let ref mut tcpStream = tcpStreamMap[usize::from(connectionId)];
-					loop {
-						// read into buffer
-						match tcpStream.read(&mut buf) {
-							Ok(n) => {
-								if n == 0 {
-									println!("Closing connection on token={:?}", connectionId);
-									tcpStreamMap.remove(usize::from(connectionId));
-									break;
-								} else {
-									let mut stdoutHandle = stdout.lock();
-									// write from buffer
-									stdoutHandle.write(&buf[..n]).expect("write error");
-									stdoutHandle.flush().expect("flush error");
-								}
-							}
-							Err(e) => {
-								if e.kind() != ErrorKind::WouldBlock {
-									println!("Closing connection on token={:?}, Error:{:?}", connectionId, e);
-									tcpStreamMap.remove(usize::from(connectionId));
-								}
+				}else {
+					warn!("the server listener readiness is not readable. will exit");
+					::std::process::exit(1);
+				}
+			}else {
+				// if this id is not SERVER, then it must be the one already register before
+				// otherwise, it will panic! when the id cannot be found in the slab
+				let ref mut stream = tcpStreamSlab[usize::from(id)];
+				loop {
+					match stream.read(&mut buf) {
+						Ok(n) => {
+							if n == 0 {
+								info!("no data read. mio will auto close connection : {:?}", id);
+								info!("removing id from slab");
+								tcpStreamSlab.remove(usize::from(id));
 								break;
+							}else {
+								info!("got some data, n={}", n);
+								let mut stdOutHandler = stdout.lock();
+								stdOutHandler.write(&buf[..n])
+										.expect("write to stdout error");
+								stdOutHandler.flush()
+										.expect("flush to stdout error");
 							}
+						},
+						Err(e) => {
+							error!("error when read stream. id:{:?}, error:{}", id, e);
+							tcpStreamSlab.remove(usize::from(id));
+							break;
 						}
 					}
 				}
-			} else {
-				println!("Event readiness is not readable");
-				if connectionId == THIS_CONN_ID {
-					::std::process::exit(1);
-				}
-				tcpStreamMap.remove(usize::from(connectionId));
 			}
 		}
 	}
+}
+
+fn setupPort() -> String {
+	let mut args = ::std::env::args();
+	let cmd = args.next().unwrap();
+	let port = args.next().expect(&format!("Usage: {} [port]", cmd));
+	port
 }
