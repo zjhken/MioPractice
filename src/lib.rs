@@ -10,17 +10,19 @@ extern crate log;
 extern crate simple_logger;
 
 use std::net::SocketAddr;
-use std::io::{Read, Write, ErrorKind};
-use mio::*;
-use mio::tcp::{TcpListener, TcpStream};
+use std::io::{Read, Write};
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::tcp::{TcpListener};
 
 use slab::Slab;
 
-const SERVER_ID: Token = Token(0);
+// have to set the server id to the max usize, as the slab will auto create number one by one
+const SERVER_ID: Token = Token(::std::usize::MAX - 1);
+const BUF_SIZE: usize = 1024usize;
 
 pub fn run() {
 
-	simple_logger::init().unwrap();
+	simple_logger::init_with_level(log::Level::Info).unwrap();
 
 //	let port = setupPort();
 
@@ -31,6 +33,7 @@ pub fn run() {
 	let serverTcpListener = TcpListener::bind(&addr)
 			.expect("socket binding error");
 
+
 	let poll = Poll::new().expect("poll create error");
 	poll.register(&serverTcpListener, SERVER_ID, Ready::readable(), PollOpt::edge())
 			.expect("poll register error");
@@ -38,7 +41,9 @@ pub fn run() {
 	// the event loop
 	let mut events = Events::with_capacity(1024);
 	let mut tcpStreamSlab = Slab::with_capacity(1024);
-	let mut buf: [u8; 1024] = [0; 1024];
+
+
+	let mut buf = [0u8; BUF_SIZE];
 	let stdout = ::std::io::stdout();
 	loop {
 		poll.poll(&mut events, None).expect("poll error");
@@ -69,6 +74,7 @@ pub fn run() {
 			}else {
 				// if this id is not SERVER, then it must be the one already register before
 				// otherwise, it will panic! when the id cannot be found in the slab
+				info!("Get ID={:?}", usize::from(id));
 				let ref mut stream = tcpStreamSlab[usize::from(id)];
 				loop {
 					match stream.read(&mut buf) {
