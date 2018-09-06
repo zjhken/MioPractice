@@ -19,7 +19,7 @@ use slab::Slab;
 
 // have to set the server id to the max usize, as the slab will auto create number one by one
 const SERVER_ID: Token = Token(::std::usize::MAX - 1);
-const BUF_SIZE: usize = 2048usize;
+const BUF_SIZE: usize = 1024usize;
 
 pub fn run() {
 	simple_logger::init_with_level(log::Level::Info).unwrap();
@@ -69,7 +69,7 @@ pub fn run() {
 						warn!("the server listener readiness is not readable. will exit");
 						::std::process::exit(1);
 					}
-				},
+				}
 				Token(id) => {
 					// if this id is not SERVER, then it must be the one already register before
 					// otherwise, it will panic! when the id cannot be found in the slab
@@ -96,19 +96,54 @@ pub fn run() {
 										stdOutHandler.write("\n".as_bytes());
 										stdOutHandler.flush()
 												.expect("flush to stdout error");
+
+//										if n < BUF_SIZE {
+//											info!("n = {} < {}", n, BUF_SIZE);
+//											info!("going to re-register the write event");
+//											// after read. we can wait for the write
+//											poll.reregister(stream,
+//											              Token::from(id),
+//											              Ready::writable(),
+//											              PollOpt::edge())
+//													.unwrap();
+//										}
 									}
 								}
 								Err(e) => {
-//								error!("error when read stream. id:{:?}, error:{}", id, e);
-									tcpStreamSlab.remove(usize::from(id));
+									error!("error when read stream. id:{:?}, error:{}", id, e);
+									info!("going to re-register the write event");
+									// after read. we can wait for the write
+									poll.reregister(stream,
+									                Token::from(id),
+									                Ready::writable(),
+									                PollOpt::edge())
+											.unwrap();
+//									tcpStreamSlab.remove(usize::from(id));
+//
 									break;
 								}
 							}
 						}
-					}else {
-						let ready = event.kind();
-						info!("the event is not readable, the event kind={:?}, id={:?}", ready, id);
+					} else if event.readiness().is_writable() {
+						let mut stream = tcpStreamSlab.remove(usize::from(id));
+						match stream.write("HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+
+<html>
+      <head></head>
+      <body>
+            <h1>This is Response</h1>
+      </body>
+</html>".as_bytes()) {
+							Ok(nWrite) => info!("Response {} Bytes", nWrite),
+							Err(e) => error!("Response error: {}", e),
+						}
+						stream.flush().unwrap();
+//						let ready = event.readiness();
+//						info!("the event is not readable, the event kind={:?}, id={:?}", ready, id);
 						break;
+					} else {
+						unreachable!();
 					}
 				}
 			}
