@@ -20,13 +20,21 @@ use slab::Slab;
 // have to set the server id to the max usize, as the slab will auto create number one by one
 const SERVER_ID: Token = Token(::std::usize::MAX - 1);
 const BUF_SIZE: usize = 1024usize;
+const HTTP_RESP: &str = "HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+
+<html>
+      <head></head>
+      <body>
+            <h1>This is Response</h1>
+      </body>
+</html>";
 
 pub fn run() {
 	simple_logger::init_with_level(log::Level::Info).unwrap();
 
-//	let port = setupPort();
+	let port:String = setupPort("8989");
 
-	let port = "8989";
 
 	let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()
 			.expect("argument format error: port");
@@ -93,20 +101,11 @@ pub fn run() {
 										ss.push_str(s);
 										stdOutHandler.write(&buf[..n])
 												.expect("write to stdout error");
-										stdOutHandler.write("\n".as_bytes());
+										stdOutHandler.write("\n".as_bytes())
+												.expect("write to stdout error");
 										stdOutHandler.flush()
 												.expect("flush to stdout error");
 
-//										if n < BUF_SIZE {
-//											info!("n = {} < {}", n, BUF_SIZE);
-//											info!("going to re-register the write event");
-//											// after read. we can wait for the write
-//											poll.reregister(stream,
-//											              Token::from(id),
-//											              Ready::writable(),
-//											              PollOpt::edge())
-//													.unwrap();
-//										}
 									}
 								}
 								Err(e) => {
@@ -118,32 +117,21 @@ pub fn run() {
 									                Ready::writable(),
 									                PollOpt::edge())
 											.unwrap();
-//									tcpStreamSlab.remove(usize::from(id));
-//
 									break;
 								}
 							}
 						}
 					} else if event.readiness().is_writable() {
 						let mut stream = tcpStreamSlab.remove(usize::from(id));
-						match stream.write("HTTP/1.1 200 OK
-Content-Type: text/html; charset=UTF-8
-
-<html>
-      <head></head>
-      <body>
-            <h1>This is Response</h1>
-      </body>
-</html>".as_bytes()) {
+						match stream.write(HTTP_RESP.as_bytes()) {
 							Ok(nWrite) => info!("Response {} Bytes", nWrite),
 							Err(e) => error!("Response error: {}", e),
 						}
 						stream.flush().unwrap();
-//						let ready = event.readiness();
-//						info!("the event is not readable, the event kind={:?}, id={:?}", ready, id);
 						break;
 					} else {
-						unreachable!();
+						let readiness = event.readiness();
+						warn!("neither writable or readable. the readiness is {:?}", readiness);
 					}
 				}
 			}
@@ -151,9 +139,16 @@ Content-Type: text/html; charset=UTF-8
 	}
 }
 
-fn setupPort() -> String {
+fn setupPort(defaultPort: &str) -> String {
 	let mut args = ::std::env::args();
-	let cmd = args.next().unwrap();
-	let port = args.next().expect(&format!("Usage: {} [port]", cmd));
-	port
+	let _cmd = args.next().unwrap();
+	let port = match args.next() {
+		Some(s) => match s.parse::<u8>() {
+			Ok(_) => s,
+			Err(_) => defaultPort.to_string(),
+		}
+		None => defaultPort.to_string(),
+	};
+	info!("Use port: {}", port);
+	return port;
 }
