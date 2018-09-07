@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::io::{Read, Write};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::TcpListener;
+use std::borrow::Cow;
 
 
 use slab::Slab;
@@ -33,7 +34,7 @@ Content-Type: text/html; charset=UTF-8
 pub fn run() {
 	simple_logger::init_with_level(log::Level::Info).unwrap();
 
-	let port:String = setupPort("8989");
+	let port = setupPort("8989");
 
 
 	let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()
@@ -139,15 +140,15 @@ pub fn run() {
 	}
 }
 
-fn setupPort(defaultPort: &str) -> String {
+fn setupPort(defaultPort: &str) -> Cow<str> {
 	let mut args = ::std::env::args();
 	let _cmd = args.next().unwrap();
 	let port = match args.next() {
 		Some(s) => match s.parse::<u8>() {
-			Ok(_) => s,
-			Err(_) => defaultPort.to_string(),
+			Ok(_) => Cow::Owned(s),
+			Err(_) => Cow::Borrowed(defaultPort),
 		}
-		None => defaultPort.to_string(),
+		None => Cow::Borrowed(defaultPort),
 	};
 	info!("Use port: {}", port);
 	return port;
