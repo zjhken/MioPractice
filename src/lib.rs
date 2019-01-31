@@ -9,12 +9,11 @@ extern crate log;
 
 extern crate simple_logger;
 
-use std::net::SocketAddr;
-use std::io::{Read, Write};
-use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::tcp::TcpListener;
+use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::borrow::Cow;
-
+use std::io::{Read, Write};
+use std::net::SocketAddr;
 
 use slab::Slab;
 
@@ -36,43 +35,48 @@ pub fn run() {
 
 	let port = setupPort("8989");
 
-
-	let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()
+	let addr: SocketAddr = format!("127.0.0.1:{}", port)
+			.parse()
 			.expect("argument format error: port");
-	let serverTcpListener = TcpListener::bind(&addr)
-			.expect("socket binding error");
+	let serverTcpListener = TcpListener::bind(&addr).expect("socket binding error");
 
 	let poll = Poll::new().expect("poll create error");
-	poll.register(&serverTcpListener, SERVER_ID, Ready::readable(), PollOpt::edge())
-			.expect("poll register error");
+	poll.register(
+		&serverTcpListener,
+		SERVER_ID,
+		Ready::readable(),
+		PollOpt::edge(),
+	).expect("poll register error");
 
 	// the event loop
-	let mut events = Events::with_capacity(1024);
+	let mut eventPool = Events::with_capacity(1024);
 	let mut tcpStreamSlab = Slab::with_capacity(1024);
 
 	let mut buf = [0u8; BUF_SIZE];
 	let stdout = ::std::io::stdout();
+	info!("Start poll loop...");
 	loop {
-		poll.poll(&mut events, None).expect("poll error");
-		for event in events.iter() {
+		poll.poll(&mut eventPool, None).expect("poll error");
+		for event in eventPool.iter() {
 			match event.token() {
 				SERVER_ID => {
 					if event.readiness().is_readable() {
 						loop {
 							let tcpStream = match serverTcpListener.accept() {
 								Ok((tcpStream, addr)) => {
-									info!("Accepted tcp stream from {:?}", addr);
+									info!("Server: event found. It's readable TCP stream from {:?}", addr);
 									tcpStream
 								}
-								Err(_) => break
+								Err(_) => break,
 							};
 							let streamId = tcpStreamSlab.insert(tcpStream);
-							info!("register this stream ID {}", streamId);
-							poll.register(&tcpStreamSlab[streamId],
-							              Token::from(streamId),
-							              Ready::readable(),
-							              PollOpt::edge())
-									.expect("poll register error");
+							info!("register this stream ID {} to poll system", streamId);
+							poll.register(
+								&tcpStreamSlab[streamId],
+								Token::from(streamId),
+								Ready::readable(),
+								PollOpt::edge(),
+							).expect("poll register error");
 						}
 					} else {
 						warn!("the server listener readiness is not readable. will exit");
@@ -82,10 +86,11 @@ pub fn run() {
 				Token(id) => {
 					// if this id is not SERVER, then it must be the one already register before
 					// otherwise, it will panic! when the id cannot be found in the slab
-					info!("Get event. ID={:?}", usize::from(id));
+					info!("non-server event found. ID={:?}", usize::from(id));
 					let ref mut stream = tcpStreamSlab[usize::from(id)];
 
 					if event.readiness().is_readable() {
+						info!("This event is readable. Going to read it...loop");
 						loop {
 							match stream.read(&mut buf) {
 								Ok(n) => {
@@ -95,29 +100,29 @@ pub fn run() {
 										tcpStreamSlab.remove(usize::from(id));
 										break;
 									} else {
-										info!("Receive {} Bytes", n);
+										info!("Read {} Bytes", n);
 										let mut stdOutHandler = stdout.lock();
 										let s = ::std::str::from_utf8(&buf).unwrap();
 										let mut ss = String::new();
 										ss.push_str(s);
 										stdOutHandler.write(&buf[..n])
-												.expect("write to stdout error");
+												.expect("write to stdout failed");
 										stdOutHandler.write("\n".as_bytes())
-												.expect("write to stdout error");
+												.expect("write to stdout failed");
 										stdOutHandler.flush()
-												.expect("flush to stdout error");
-
+												.expect("flush to stdout failed");
 									}
 								}
 								Err(e) => {
 									error!("error when read stream. id:{:?}, error:{}", id, e);
 									info!("going to re-register the write event");
 									// after read. we can wait for the write
-									poll.reregister(stream,
-									                Token::from(id),
-									                Ready::writable(),
-									                PollOpt::edge())
-											.unwrap();
+									poll.reregister(
+										stream,
+										Token::from(id),
+										Ready::writable(),
+										PollOpt::edge(),
+									).unwrap();
 									break;
 								}
 							}
@@ -132,7 +137,10 @@ pub fn run() {
 						break;
 					} else {
 						let readiness = event.readiness();
-						warn!("neither writable or readable. the readiness is {:?}", readiness);
+						warn!(
+							"neither writable or readable. the readiness is {:?}",
+							readiness
+						);
 					}
 				}
 			}
@@ -147,7 +155,7 @@ fn setupPort(defaultPort: &str) -> Cow<str> {
 		Some(s) => match s.parse::<u8>() {
 			Ok(_) => Cow::Owned(s),
 			Err(_) => Cow::Borrowed(defaultPort),
-		}
+		},
 		None => Cow::Borrowed(defaultPort),
 	};
 	info!("Use port: {}", port);
